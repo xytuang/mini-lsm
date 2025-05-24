@@ -113,8 +113,12 @@ impl MemTable {
     /// In week 2, day 6, also flush the data to WAL.
     /// In week 3, day 5, modify the function to use the batch API.
     pub fn put(&self, _key: &[u8], _value: &[u8]) -> Result<()> {
+        let estimated_len = _key.len() + _value.len();
         let cloned_map = Arc::clone(&self.map);
         cloned_map.insert(Bytes::copy_from_slice(_key), Bytes::copy_from_slice(_value));
+
+        self.approximate_size
+            .fetch_add(estimated_len, std::sync::atomic::Ordering::Relaxed);
         Ok(())
     }
 

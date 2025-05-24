@@ -311,10 +311,14 @@ impl LsmStorageInner {
 
     /// Put a key-value pair into the storage by writing into the current memtable.
     pub fn put(&self, _key: &[u8], _value: &[u8]) -> Result<()> {
-        let state_guard = self.state.read();
-        let lsm_state = state_guard.as_ref();
-        let opt_bytes = lsm_state.memtable.put(_key, _value);
+        let size;
+        {
+            let state_guard = self.state.read();
+            state_guard.memtable.put(_key, _value)?;
+            size = state_guard.memtable.approximate_size();
+        }
 
+        self.try_freeze(size)?;
         Ok(())
     }
 
@@ -322,6 +326,19 @@ impl LsmStorageInner {
     pub fn delete(&self, _key: &[u8]) -> Result<()> {
         let empty: &[u8] = &[];
         self.put(_key, empty)
+    }
+
+    pub fn try_freeze(&self, estimated_size: usize) -> Result<()> {
+        if estimated_size >= self.options.target_sst_size {
+            let state_lock = self.state_lock.lock();
+            let guard = self.state.read();
+
+            if guard.memtable.approximate_size() >= self.options.target_sst_size {
+                drop(guard);
+                self.force_freeze_memtable(&state_lock)?;
+            }
+        }
+        Ok(())
     }
 
     pub(crate) fn path_of_sst_static(path: impl AsRef<Path>, id: usize) -> PathBuf {
@@ -346,7 +363,20 @@ impl LsmStorageInner {
 
     /// Force freeze the current memtable to an immutable memtable
     pub fn force_freeze_memtable(&self, _state_lock_observer: &MutexGuard<'_, ()>) -> Result<()> {
-        unimplemented!()
+        let memtable_id = self.next_sst_id();
+        let new_memtable = Arc::new(MemTable::create(memtable_id));
+        let old_memtable;
+        {
+            let mut state_guard = self.state.write();
+            let mut lsm_state = state_guard.as_ref().clone();
+            //replace returns the old memtable
+            old_memtable = std::mem::replace(&mut lsm_state.memtable, new_memtable);
+
+            //Add old memtable to immutable memtables
+            lsm_state.imm_memtables.insert(0, old_memtable.clone());
+            *state_guard = Arc::new(lsm_state);
+        }
+        Ok(())
     }
 
     /// Force flush the earliest-created immutable memtable to disk
