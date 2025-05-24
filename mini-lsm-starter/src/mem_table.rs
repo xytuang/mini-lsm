@@ -97,7 +97,13 @@ impl MemTable {
 
         match opt_value {
             None => None,
-            Some(entry) => Some(entry.value().clone()),
+            Some(entry) => {
+                if entry.value().len() == 0 {
+                    None
+                } else {
+                    Some(entry.value().clone())
+                }
+            }
         }
     }
 
