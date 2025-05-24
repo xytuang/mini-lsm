@@ -92,19 +92,11 @@ impl MemTable {
 
     /// Get a value by key.
     pub fn get(&self, _key: &[u8]) -> Option<Bytes> {
-        let cloned_map = Arc::clone(&self.map);
-        let opt_value = cloned_map.get(_key);
-
-        match opt_value {
-            None => None,
-            Some(entry) => {
-                if entry.value().len() == 0 {
-                    None
-                } else {
-                    Some(entry.value().clone())
-                }
-            }
+        if let Some(entry) = self.map.get(_key) {
+            return Some(entry.value().clone());
         }
+
+        None
     }
 
     /// Put a key-value pair into the mem-table.
@@ -114,8 +106,8 @@ impl MemTable {
     /// In week 3, day 5, modify the function to use the batch API.
     pub fn put(&self, _key: &[u8], _value: &[u8]) -> Result<()> {
         let estimated_len = _key.len() + _value.len();
-        let cloned_map = Arc::clone(&self.map);
-        cloned_map.insert(Bytes::copy_from_slice(_key), Bytes::copy_from_slice(_value));
+        self.map
+            .insert(Bytes::copy_from_slice(_key), Bytes::copy_from_slice(_value));
 
         self.approximate_size
             .fetch_add(estimated_len, std::sync::atomic::Ordering::Relaxed);
